@@ -710,6 +710,25 @@ class NOPLocalWorkflowTask(LocalWorkflowTask):
         """The task name"""
         return 'NOP'
 
+    def dump(self):
+        self.stored = True
+        return {
+            'id': self.id,
+            'name': self.name,
+            'state': self._state,
+            'type': self.task_type,
+            'parameters': {
+                'current_retries': self.current_retries,
+                'send_task_events': self.send_task_events,
+                'cloudify_context': {},
+                'info': None,
+                'error': None,
+                'containing_subgraph': getattr(
+                    self.containing_subgraph, 'id', None),
+                'task_kwargs': {},
+            }
+        }
+
     def apply_async(self):
         self.set_state(TASK_SUCCEEDED)
         return LocalWorkflowTaskResult(self)
