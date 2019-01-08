@@ -710,12 +710,30 @@ class NOPLocalWorkflowTask(LocalWorkflowTask):
         """The task name"""
         return 'NOP'
 
+    def set_state(self, state):
+        """
+        Set the task state
+
+        :param state: The state to set [pending, sending, sent, started,
+                                        rescheduled, succeeded, failed]
+        """
+        if state not in [TASK_PENDING, TASK_SENDING, TASK_SENT, TASK_STARTED,
+                         TASK_RESCHEDULED, TASK_SUCCEEDED, TASK_FAILED]:
+            raise RuntimeError('Illegal state set on task: {0} '
+                               '[task={1}]'.format(state, str(self)))
+        if self._state in TERMINATED_STATES:
+            return
+        self._state = state
+        if state in TERMINATED_STATES:
+            self.is_terminated = True
+            self.terminated.put_nowait(True)
+
     def dump(self):
         self.stored = True
         return {
             'id': self.id,
             'name': self.name,
-            'state': self._state,
+            'state': TASK_SUCCEEDED,
             'type': self.task_type,
             'parameters': {
                 'current_retries': self.current_retries,
