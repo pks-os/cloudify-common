@@ -196,8 +196,8 @@ class WorkflowTask(object):
             self.terminated.put_nowait(True)
 
     def _update_stored_state(self, state):
-            with current_workflow_ctx.push(self.workflow_context):
-                self.workflow_context.update_operation(self.id, state=state)
+        with current_workflow_ctx.push(self.workflow_context):
+            self.workflow_context.update_operation(self.id, state=state)
 
     def wait_for_terminated(self, timeout=None):
         if self.is_terminated:
@@ -650,6 +650,11 @@ class LocalWorkflowTask(WorkflowTask):
         # TODO restoring local tasks is not supported yet
         task.local_task = lambda *a, **kw: None
         return task
+
+    def _update_stored_state(self, state):
+        if state == TASK_SENT:
+            return
+        return super(LocalWorkflowTask, self)._update_stored_state(state)
 
     def apply_async(self):
         """
