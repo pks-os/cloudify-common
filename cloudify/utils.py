@@ -46,7 +46,7 @@ ADMIN_API_TOKEN_PATH = '/opt/mgmtworker/work/admin_token'
 
 
 def debuglog(*a):
-    with open('/tmp/foo.log', a) as f:
+    with open('/tmp/foo.log', 'a') as f:
         f.write('{0} {1}\n'.format(datetime.now(), a))
 
 
