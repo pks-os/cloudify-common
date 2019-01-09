@@ -196,6 +196,20 @@ def set_send_node_event_on_error_handler(task, instance):
     task.on_failure = send_node_event_error_handler
 
 
+def _task_operations(task, pre=None, post=None, default=None):
+    if not task or isinstance(task, workflow_tasks.NOPLocalWorkflowTask):
+        return [default()] if default else []
+    if pre is None:
+        pre = []
+    if post is None:
+        post = []
+    if not isinstance(pre, list):
+        pre = [pre]
+    if not isinstance(post, list):
+        post = [post]
+    return pre + [task] + post
+
+
 def install_node_instance_subgraph(instance, graph, **kwargs):
     """This function is used to create a tasks sequence installing one node
     instance.
@@ -206,54 +220,69 @@ def install_node_instance_subgraph(instance, graph, **kwargs):
     """
     subgraph = graph.subgraph('install_{0}'.format(instance.id))
     sequence = subgraph.sequence()
-    sequence.add(
+    tasks = [
         instance.set_state('initializing'),
-        forkjoin(instance.send_event('Creating node instance'),
-                 instance.set_state('creating')),
-        instance.execute_operation('cloudify.interfaces.lifecycle.create'),
-        forkjoin(instance.send_event('Node instance created'),
-                 instance.set_state('created')),
-        instance.send_event('Pre-configuring relationships'),
-        _relationships_operations(
+    ] + _task_operations(
+        pre=forkjoin(instance.send_event('Creating node instance'),
+                     instance.set_state('creating')),
+        task=instance.execute_operation(
+            'cloudify.interfaces.lifecycle.create'),
+        post=forkjoin(instance.send_event('Node instance created'),
+                      instance.set_state('created')),
+        default=lambda: instance.send_event(
+            'Creating node instance: nothing to do')
+    ) + _task_operations(
+        pre=instance.send_event('Pre-configuring relationships'),
+        task=_relationships_operations(
             subgraph,
             instance,
             'cloudify.interfaces.relationship_lifecycle.preconfigure'
         ),
-        instance.send_event('Relationships pre-configured'),
-        forkjoin(instance.set_state('configuring'),
-                 instance.send_event('Configuring node instance')),
-        instance.execute_operation('cloudify.interfaces.lifecycle.configure'),
-        forkjoin(instance.set_state('configured'),
-                 instance.send_event('Node instance configured')),
-        instance.send_event('Post-configuring relationships'),
-        _relationships_operations(
+        post=instance.send_event('Relationships pre-configured')
+    ) + _task_operations(
+        pre=forkjoin(instance.set_state('configuring'),
+                     instance.send_event('Configuring node instance')),
+        task=instance.execute_operation(
+            'cloudify.interfaces.lifecycle.configure'),
+        post=forkjoin(instance.set_state('configured'),
+                      instance.send_event('Node instance configured'))
+    ) + _task_operations(
+        pre=instance.send_event('Post-configuring relationships'),
+        task=_relationships_operations(
             subgraph,
             instance,
             'cloudify.interfaces.relationship_lifecycle.postconfigure'
         ),
-        instance.send_event('Relationships post-configured'),
-        forkjoin(instance.set_state('starting'),
-                 instance.send_event('Starting node instance')),
-        instance.execute_operation('cloudify.interfaces.lifecycle.start'))
+        post=instance.send_event('Relationships post-configured'),
+    ) + _task_operations(
+        pre=forkjoin(instance.set_state('starting'),
+                     instance.send_event('Starting node instance')),
+        task=instance.execute_operation('cloudify.interfaces.lifecycle.start'),
+        default=lambda: instance.send_event(
+            'Starting node instance: nothing to do')
+    )
 
     # If this is a host node, we need to add specific host start
     # tasks such as waiting for it to start and installing the agent
     # worker (if necessary)
     if is_host_node(instance):
-        sequence.add(*_host_post_start(instance))
+        tasks += _host_post_start(instance)
 
-    sequence.add(
-        instance.execute_operation('cloudify.interfaces.monitoring.start'),
-        instance.send_event('Establishing relationships'),
-        _relationships_operations(
+    tasks += _task_operations(
+        instance.execute_operation('cloudify.interfaces.monitoring.start')
+    ) + _task_operations(
+        pre=instance.send_event('Establishing relationships'),
+        task=_relationships_operations(
             subgraph,
             instance,
             'cloudify.interfaces.relationship_lifecycle.establish'
         ),
-        instance.send_event('Relationships established'),
+        post=instance.send_event('Relationships established'),
+    ) + [
         forkjoin(instance.set_state('started'),
-                 instance.send_event('Node instance started')))
-
+                 instance.send_event('Node instance started'))
+    ]
+    sequence.add(*tasks)
     subgraph.on_failure = get_subgraph_on_failure_handler(instance)
     return subgraph
 
@@ -354,9 +383,6 @@ def _relationships_operations(graph,
         subgraph.containing_subgraph.failed_task = subgraph.failed_task
         subgraph.containing_subgraph.set_state(workflow_tasks.TASK_FAILED)
         return handler_result
-    result = graph.subgraph('{0}_subgraph'.format(operation))
-    result.on_failure = on_failure
-    sequence = result.sequence()
     relationships_groups = itertools.groupby(
         node_instance.relationships,
         key=lambda r: r.relationship.target_id)
@@ -371,13 +397,22 @@ def _relationships_operations(graph,
             if (not modified_relationship_ids or
                     (source_id in modified_relationship_ids and
                      target_id in modified_relationship_ids[source_id])):
-                group_tasks += _relationship_operations(relationship,
-                                                        operation)
-        tasks.append(forkjoin(*group_tasks))
+                rel_ops = _relationship_operations(relationship, operation)
+                if all(isinstance(task, workflow_tasks.NOPLocalWorkflowTask)
+                       for task in rel_ops):
+                    continue
+                group_tasks += rel_ops
+        if group_tasks:
+            tasks.append(forkjoin(*group_tasks))
     if reverse:
         tasks = reversed(tasks)
+    if not tasks:
+        return
+    result = graph.subgraph('{0}_subgraph'.format(operation))
+    result.on_failure = on_failure
+    sequence = result.sequence()
     sequence.add(*tasks)
-    return result
+    return [result]
 
 
 def _relationship_operations(relationship, operation):
