@@ -29,6 +29,7 @@ import importlib
 import traceback
 import subprocess
 
+from datetime import datetime
 from distutils.version import StrictVersion
 from contextlib import contextmanager, closing
 
@@ -42,6 +43,11 @@ from cloudify.exceptions import CommandExecutionException, NonRecoverableError
 CFY_EXEC_TEMPDIR_ENVVAR = 'CFY_EXEC_TEMP'
 INSPECT_TIMEOUT = 30
 ADMIN_API_TOKEN_PATH = '/opt/mgmtworker/work/admin_token'
+
+
+def debuglog(*a):
+    with open('/tmp/foo.log', a) as f:
+        f.write('{0} {1}\n'.format(datetime.now(), a))
 
 
 class ManagerVersion(object):

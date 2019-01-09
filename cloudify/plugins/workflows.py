@@ -25,6 +25,7 @@ from cloudify.workflows.tasks_graph import make_or_get_graph
 @workflow
 def install(ctx, **kwargs):
     """Default install workflow"""
+    utils.debuglog('start workflow')
     lifecycle.install_node_instances(
         graph=ctx.graph_mode(),
         node_instances=set(ctx.node_instances))

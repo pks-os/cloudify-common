@@ -20,6 +20,7 @@ from functools import wraps
 
 import networkx as nx
 
+from cloudify import utils
 from cloudify.workflows import api
 from cloudify.workflows import tasks
 from cloudify.state import workflow_ctx
@@ -183,7 +184,7 @@ class TaskDependencyGraph(object):
         """
         # clear error, in case the tasks graph has been reused
         self._error = None
-
+        utils.debuglog('execute start')
         while self._error is None:
 
             if self._is_execution_cancelled():
