@@ -187,14 +187,17 @@ class WorkflowTask(object):
             raise RuntimeError('Illegal state set on task: {0} '
                                '[task={1}]'.format(state, str(self)))
         if self.stored:
-            with current_workflow_ctx.push(self.workflow_context):
-                self.workflow_context.update_operation(self.id, state=state)
+            self._update_stored_state(state)
         if self._state in TERMINATED_STATES:
             return
         self._state = state
         if state in TERMINATED_STATES:
             self.is_terminated = True
             self.terminated.put_nowait(True)
+
+    def _update_stored_state(self, state):
+            with current_workflow_ctx.push(self.workflow_context):
+                self.workflow_context.update_operation(self.id, state=state)
 
     def wait_for_terminated(self, timeout=None):
         if self.is_terminated:
@@ -410,6 +413,13 @@ class RemoteWorkflowTask(WorkflowTask):
 
         :return: a RemoteWorkflowTaskResult instance wrapping the async result
         """
+        # the task should be sent to the agent if either:
+        # 1) this is the first execution of this task (state=pending)
+        # 2) this is a resume (state=sent|started) and the task is a central
+        #    deployment agent task
+        should_send = self._state == TASK_PENDING or self._should_resume()
+        if self._state == TASK_PENDING:
+            self.set_state(TASK_SENDING)
         try:
             self._set_queue_kwargs()
             if self._can_resend():
@@ -419,7 +429,7 @@ class RemoteWorkflowTask(WorkflowTask):
                 tenant=self._task_tenant)
             async_result = self.workflow_context.internal.handler\
                 .wait_for_result(self, task)
-            if self._state == TASK_SENDING or self._can_resend():
+            if should_send:
                 self.workflow_context.internal.send_task_event(
                     TASK_SENDING, self)
                 self.workflow_context.internal.handler.send_task(self, task)
@@ -641,24 +651,6 @@ class LocalWorkflowTask(WorkflowTask):
         task.local_task = lambda *a, **kw: None
         return task
 
-    def set_state(self, state):
-        """
-        Set the task state
-
-        :param state: The state to set [pending, sending, sent, started,
-                                        rescheduled, succeeded, failed]
-        """
-        if state not in [TASK_PENDING, TASK_SENDING, TASK_SENT, TASK_STARTED,
-                         TASK_RESCHEDULED, TASK_SUCCEEDED, TASK_FAILED]:
-            raise RuntimeError('Illegal state set on task: {0} '
-                               '[task={1}]'.format(state, str(self)))
-        if self._state in TERMINATED_STATES:
-            return
-        self._state = state
-        if state in TERMINATED_STATES:
-            self.is_terminated = True
-            self.terminated.put_nowait(True)
-
     def apply_async(self):
         """
         Execute the task in the local task thread pool
@@ -728,29 +720,16 @@ class NOPLocalWorkflowTask(LocalWorkflowTask):
         """The task name"""
         return 'NOP'
 
-    def set_state(self, state):
-        """
-        Set the task state
-
-        :param state: The state to set [pending, sending, sent, started,
-                                        rescheduled, succeeded, failed]
-        """
-        if state not in [TASK_PENDING, TASK_SENDING, TASK_SENT, TASK_STARTED,
-                         TASK_RESCHEDULED, TASK_SUCCEEDED, TASK_FAILED]:
-            raise RuntimeError('Illegal state set on task: {0} '
-                               '[task={1}]'.format(state, str(self)))
-        if self._state in TERMINATED_STATES:
-            return
-        self._state = state
-        if state in TERMINATED_STATES:
-            self.is_terminated = True
-            self.terminated.put_nowait(True)
+    def _update_stored_state(self, state):
+            pass
 
     def dump(self):
         self.stored = True
         return {
             'id': self.id,
             'name': self.name,
+            # NOP tasks are stored already in the succeeded state - no need
+            # executing them again after restore
             'state': TASK_SUCCEEDED,
             'type': self.task_type,
             'parameters': {
