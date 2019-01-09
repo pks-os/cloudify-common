@@ -58,10 +58,10 @@ def execute_establish_relationships(graph,
                                     related_nodes=None,
                                     modified_relationship_ids=None):
     processor = LifecycleProcessor(
-            graph=graph,
-            related_nodes=node_instances,
-            modified_relationship_ids=modified_relationship_ids,
-            name_prefix='establish')
+        graph=graph,
+        related_nodes=node_instances,
+        modified_relationship_ids=modified_relationship_ids,
+        name_prefix='establish')
     processor.install()
 
 
@@ -70,10 +70,10 @@ def execute_unlink_relationships(graph,
                                  related_nodes=None,
                                  modified_relationship_ids=None):
     processor = LifecycleProcessor(
-            graph=graph,
-            related_nodes=node_instances,
-            modified_relationship_ids=modified_relationship_ids,
-            name_prefix='unlink')
+        graph=graph,
+        related_nodes=node_instances,
+        modified_relationship_ids=modified_relationship_ids,
+        name_prefix='unlink')
     processor.uninstall()
 
 
@@ -196,9 +196,9 @@ def set_send_node_event_on_error_handler(task, instance):
     task.on_failure = send_node_event_error_handler
 
 
-def _task_operations(task, pre=None, post=None, default=None):
+def _task_operations(task, pre=None, post=None):
     if not task or isinstance(task, workflow_tasks.NOPLocalWorkflowTask):
-        return [default()] if default else []
+        return []
     if pre is None:
         pre = []
     if post is None:
@@ -220,18 +220,15 @@ def install_node_instance_subgraph(instance, graph, **kwargs):
     """
     subgraph = graph.subgraph('install_{0}'.format(instance.id))
     sequence = subgraph.sequence()
-    tasks = [
-        instance.set_state('initializing'),
-    ] + _task_operations(
+    tasks = []
+    create = _task_operations(
         pre=forkjoin(instance.send_event('Creating node instance'),
                      instance.set_state('creating')),
         task=instance.execute_operation(
             'cloudify.interfaces.lifecycle.create'),
         post=forkjoin(instance.send_event('Node instance created'),
-                      instance.set_state('created')),
-        default=lambda: instance.send_event(
-            'Creating node instance: nothing to do')
-    ) + _task_operations(
+                      instance.set_state('created')))
+    preconf = _task_operations(
         pre=instance.send_event('Pre-configuring relationships'),
         task=_relationships_operations(
             subgraph,
@@ -239,14 +236,16 @@ def install_node_instance_subgraph(instance, graph, **kwargs):
             'cloudify.interfaces.relationship_lifecycle.preconfigure'
         ),
         post=instance.send_event('Relationships pre-configured')
-    ) + _task_operations(
+    )
+    configure = _task_operations(
         pre=forkjoin(instance.set_state('configuring'),
                      instance.send_event('Configuring node instance')),
         task=instance.execute_operation(
             'cloudify.interfaces.lifecycle.configure'),
         post=forkjoin(instance.set_state('configured'),
                       instance.send_event('Node instance configured'))
-    ) + _task_operations(
+    )
+    postconf = _task_operations(
         pre=instance.send_event('Post-configuring relationships'),
         task=_relationships_operations(
             subgraph,
@@ -254,23 +253,23 @@ def install_node_instance_subgraph(instance, graph, **kwargs):
             'cloudify.interfaces.relationship_lifecycle.postconfigure'
         ),
         post=instance.send_event('Relationships post-configured'),
-    ) + _task_operations(
+    )
+    start = _task_operations(
         pre=forkjoin(instance.set_state('starting'),
                      instance.send_event('Starting node instance')),
         task=instance.execute_operation('cloudify.interfaces.lifecycle.start'),
-        default=lambda: instance.send_event(
-            'Starting node instance: nothing to do')
     )
-
     # If this is a host node, we need to add specific host start
     # tasks such as waiting for it to start and installing the agent
     # worker (if necessary)
     if is_host_node(instance):
-        tasks += _host_post_start(instance)
-
-    tasks += _task_operations(
+        post_start = _host_post_start(instance)
+    else:
+        post_start = []
+    monitoring_start = _task_operations(
         instance.execute_operation('cloudify.interfaces.monitoring.start')
-    ) + _task_operations(
+    )
+    establish = _task_operations(
         pre=instance.send_event('Establishing relationships'),
         task=_relationships_operations(
             subgraph,
@@ -278,10 +277,30 @@ def install_node_instance_subgraph(instance, graph, **kwargs):
             'cloudify.interfaces.relationship_lifecycle.establish'
         ),
         post=instance.send_event('Relationships established'),
-    ) + [
-        forkjoin(instance.set_state('started'),
-                 instance.send_event('Node instance started'))
-    ]
+    )
+
+    if any([create, preconf, configure, postconf, start, post_start,
+            monitoring_start, establish]):
+        tasks = (
+            [instance.set_state('initializing')] +
+            (create or
+             instance.send_event('Creating node instance: nothing to do')) +
+            preconf +
+            (configure or
+             instance.send_event('Configuring node instance: nothing to do')) +
+            postconf +
+            (start or
+             instance.send_event('Starting node instance: nothing to do')) +
+            post_start +
+            monitoring_start +
+            establish
+        )
+    else:
+        tasks = forkjoin(
+            instance.set_state('started'),
+            instance.send_event('Node instance started (nothing to do)')
+        )
+
     sequence.add(*tasks)
     subgraph.on_failure = get_subgraph_on_failure_handler(instance)
     return subgraph
