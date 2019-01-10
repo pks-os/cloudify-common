@@ -433,7 +433,7 @@ def _relationships_operations(graph,
     result.on_failure = on_failure
     sequence = result.sequence()
     sequence.add(*tasks)
-    return [result]
+    return result
 
 
 def _relationship_operations(relationship, operation):
