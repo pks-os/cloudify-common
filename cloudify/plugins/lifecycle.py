@@ -418,11 +418,11 @@ def _relationships_operations(graph,
             if (not modified_relationship_ids or
                     (source_id in modified_relationship_ids and
                      target_id in modified_relationship_ids[source_id])):
-                rel_ops = _relationship_operations(relationship, operation)
-                if all(isinstance(task, workflow_tasks.NOPLocalWorkflowTask)
-                       for task in rel_ops):
-                    continue
-                group_tasks += rel_ops
+                group_tasks += [
+                    op
+                    for op in _relationship_operations(relationship, operation)
+                    if not isinstance(op, workflow_tasks.NOPLocalWorkflowTask)
+                ]
         if group_tasks:
             tasks.append(forkjoin(*group_tasks))
     if reverse:

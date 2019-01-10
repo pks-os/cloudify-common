@@ -196,8 +196,7 @@ class WorkflowTask(object):
             self.terminated.put_nowait(True)
 
     def _update_stored_state(self, state):
-        with current_workflow_ctx.push(self.workflow_context):
-            self.workflow_context.update_operation(self.id, state=state)
+        self.workflow_context.update_operation(self.id, state=state)
 
     def wait_for_terminated(self, timeout=None):
         if self.is_terminated:
