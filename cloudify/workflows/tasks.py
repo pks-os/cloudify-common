@@ -405,6 +405,11 @@ class RemoteWorkflowTask(WorkflowTask):
         }
         return task
 
+    def _update_stored_state(self, state):
+        if state == TASK_SENDING:
+            return
+        return super(RemoteWorkflowTask, self)._update_stored_state(state)
+
     def apply_async(self):
         """
         Call the underlying tasks' apply_async. Verify the worker
