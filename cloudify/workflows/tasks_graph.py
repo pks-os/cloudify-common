@@ -451,11 +451,6 @@ class SubgraphTask(tasks.WorkflowTask):
     def add_dependency(self, src_task, dst_task):
         self.graph.add_dependency(src_task, dst_task)
 
-    def _update_stored_state(self, state):
-        if state in (tasks.TASK_STARTED, tasks.TASK_SUCCEEDED):
-            return
-        return super(SubgraphTask, self)._update_stored_state(state)
-
     def apply_async(self):
         if not self.tasks:
             self.set_state(tasks.TASK_SUCCEEDED)
