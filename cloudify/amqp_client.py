@@ -653,8 +653,8 @@ class CloudifyEventsPublisher(object):
             'hook': SendHandler(EVENTS_EXCHANGE_NAME,
                                 exchange_type='topic',
                                 routing_key='events.hooks'),
-            'operation': SendHandler(OPERATIONS_EXCHANGE_NAME,
-                                     exchange_type='fanout')
+            'operation': NoWaitSendHandler(OPERATIONS_EXCHANGE_NAME,
+                                           exchange_type='fanout')
         }
 
         self._connection = AMQPConnection(
