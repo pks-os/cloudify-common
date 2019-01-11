@@ -305,6 +305,11 @@ def amqp_log_out(log):
     _publish_message(log, 'log', logging.getLogger('cloudify_logs'))
 
 
+def amqp_operation_update(task_id, task_state):
+    _publish_message({'id': task_id, 'state': task_state}, 'operation',
+                     logging.getLogger('cloudify_operation'))
+
+
 def stdout_event_out(event):
     populate_base_item(event, 'cloudify_event')
     output = create_event_message_prefix(event)

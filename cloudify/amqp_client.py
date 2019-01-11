@@ -31,7 +31,11 @@ from cloudify import cluster
 from cloudify import constants
 from cloudify import exceptions
 from cloudify import broker_config
-from cloudify.constants import EVENTS_EXCHANGE_NAME, LOGS_EXCHANGE_NAME
+from cloudify.constants import (
+    EVENTS_EXCHANGE_NAME,
+    LOGS_EXCHANGE_NAME,
+    OPERATIONS_EXCHANGE_NAME
+)
 
 
 logger = logging.getLogger(__name__)
@@ -649,6 +653,8 @@ class CloudifyEventsPublisher(object):
             'hook': SendHandler(EVENTS_EXCHANGE_NAME,
                                 exchange_type='topic',
                                 routing_key='events.hooks'),
+            'operation': SendHandler(OPERATIONS_EXCHANGE_NAME,
+                                     exchange_type='fanout')
         }
 
         self._connection = AMQPConnection(

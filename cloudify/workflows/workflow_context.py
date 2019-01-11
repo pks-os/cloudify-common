@@ -57,7 +57,8 @@ from cloudify.logs import (CloudifyWorkflowLoggingHandler,
                            init_cloudify_logger,
                            send_workflow_event,
                            send_sys_wide_wf_event,
-                           send_workflow_node_event)
+                           send_workflow_node_event,
+                           amqp_operation_update)
 
 from cloudify.utils import _send_ping_task
 
@@ -1433,8 +1434,7 @@ class RemoteContextHandler(CloudifyWorkflowContextHandler):
         return operations
 
     def update_operation(self, operation_id, state):
-        client = get_rest_client()
-        client.operations.update(operation_id, state=state)
+        amqp_operation_update(operation_id, state)
 
     def get_tasks_graph(self, execution_id, name):
         client = get_rest_client()
