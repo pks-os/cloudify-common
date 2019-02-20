@@ -97,8 +97,8 @@ def send_task_event(state, task, send_event_func, event):
         task.error = exception_str
     elif state == tasks_api.TASK_FAILED:
         message = "Task failed '{0}'".format(task.name)
-        if exception_str:
-            message = "{0} -> {1}".format(message, exception_str)
+        # if exception_str:
+        #     message = "{0} -> {1}".format(message, exception_str)
         event_type = 'task_failed'
         task.error = exception_str
     else:
