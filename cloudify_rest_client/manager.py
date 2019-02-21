@@ -32,6 +32,10 @@ class ManagerClient(object):
         response = self.api.get('/config')
         return response
 
+    def put_config(self, name, value):
+        response = self.api.put('/config', data={'name': name, 'value': value})
+        return response
+
     def get_version(self):
         """
         :return: Cloudify's management machine version information.
